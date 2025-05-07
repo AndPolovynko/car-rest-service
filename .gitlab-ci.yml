@@ -1,0 +1,50 @@
+stages:
+  - test
+  - postman-test
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-fast --show-version"
+
+build-test-coverage:
+  stage: test
+  image: docker:24.0
+  services:
+    - docker:dind
+  before_script:
+    - apk update
+    - apk add openjdk17-jdk maven
+    - java -version
+    - mvn -version
+  script:
+    - export TESTCONTAINERS_RYUK_DISABLED=true
+    - mvn -Dtestcontainers.ryuk.disabled=true $MAVEN_CLI_OPTS jacoco:prepare-agent test jacoco:report jacoco:check@check
+  artifacts:
+    paths:
+      - target/site/jacoco/
+    when: always
+
+postman_tests:
+  stage: postman-test
+  image: docker:24.0
+  services:
+    - docker:dind
+  before_script:
+    - docker --version
+    - docker compose version
+    - apk update
+    - apk add openjdk17-jdk maven
+    - java -version
+    - mvn -version
+  script:
+    # Assuming Postman tests are run after test stage, disable testing when packaging the project.
+    - mvn $MAVEN_CLI_OPTS clean package -DskipTests
+    - docker compose -f postman-docker-compose.yml up -d
+    # Finishing the job on successful execution of the postman service.
+    - CONTAINER_ID=$(docker compose -f postman-docker-compose.yml ps -q postman-tests)
+    - EXIT_CODE=$(docker wait "$CONTAINER_ID")
+    - exit $EXIT_CODE
+  after_script:
+    - docker compose -f postman-docker-compose.yml down -v
