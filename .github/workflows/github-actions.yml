@@ -1,0 +1,61 @@
+name: Java CI with Docker and Postman
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  build-test-coverage:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0-dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK and Maven
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk maven
+          java -version
+          mvn -version
+      - name: Run Tests with Coverage
+        env:
+          MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+        run: |
+          export TESTCONTAINERS_RYUK_DISABLED=true
+          mvn -Dtestcontainers.ryuk.disabled=true --batch-mode --errors --fail-fast --show-version \
+            jacoco:prepare-agent test jacoco:report jacoco:check@check
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+
+  postman-tests:
+    needs: build-test-coverage
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0-dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK and Maven
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk maven
+          java -version
+          mvn -version
+      - name: Build Package
+        run: mvn --batch-mode --errors --fail-fast --show-version clean package -DskipTests
+      - name: Run Postman Tests
+        run: |
+          docker compose -f postman-docker-compose.yml up -d
+          CONTAINER_ID=$(docker compose -f postman-docker-compose.yml ps -q postman-tests)
+          EXIT_CODE=$(docker wait "$CONTAINER_ID")
+          exit $EXIT_CODE
+      - name: Teardown Postman Environment
+        if: always()
+        run: docker compose -f postman-docker-compose.yml down -v
