@@ -80,7 +80,7 @@ services:
     entrypoint: sh
     command: /src/test/resources/postman/car-service-runner.sh
     volumes:
-      - ${CI_PROJECT_DIR}/src/test/resources/postman:/src/test/resources/postman
+      - ./src/test/resources/postman:/src/test/resources/postman
     depends_on:
       - keycloak
       - car-service-test-db
